@@ -1,7 +1,7 @@
 {
   "name": "dawn-banking",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Dawn Banking — DawnTools goldlog viewer",
   "author": "Sutahir",
   "type": "module",
