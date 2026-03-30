@@ -1,0 +1,23 @@
+:root {
+  font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #f8fafc;
+  background: #0f0a06;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 520px at 8% -20%, rgba(16, 185, 129, 0.22), transparent),
+    radial-gradient(900px 460px at 100% 0%, rgba(251, 191, 36, 0.18), transparent),
+    radial-gradient(800px 360px at 50% 120%, rgba(244, 63, 94, 0.14), transparent),
+    #0f0a06;
+}
