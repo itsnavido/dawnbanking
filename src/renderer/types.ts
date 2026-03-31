@@ -79,3 +79,24 @@ export type DawnToolsSheetCheckResponse =
       error: string
     }
 
+export type DawnToolsBrowseRetailResponse =
+  | {
+      ok: true
+      retailPath: string
+    }
+  | {
+      ok: false
+      error: string
+    }
+
+export type DawnToolsAccountDirsResponse =
+  | {
+      ok: true
+      accountRoot: string
+      accountDirs: string[]
+    }
+  | {
+      ok: false
+      error: string
+    }
+

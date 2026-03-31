@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  DawnToolsAccountDirsResponse,
+  DawnToolsBrowseRetailResponse,
   DawnToolsSheetCheckResponse,
   DawnToolsLoadGoldlogResponse,
   DawnToolsSyncResponse,
@@ -11,6 +13,10 @@ import type {
 // The renderer should never touch the filesystem directly.
 export function exposeDawnToolsApi() {
   contextBridge.exposeInMainWorld('dawntools', {
+    browseRetailFolder: () =>
+      ipcRenderer.invoke('dawntools:browseRetailFolder'),
+    listAccountDirs: (retailPath: string) =>
+      ipcRenderer.invoke('dawntools:listAccountDirs', retailPath),
     loadGoldlog: (dawnToolsLuaPath: string) =>
       ipcRenderer.invoke('dawntools:loadGoldlog', dawnToolsLuaPath),
     uploadGoldlogToSheet: (payload: {
@@ -36,6 +42,8 @@ export function exposeDawnToolsApi() {
 declare global {
   interface Window {
     dawntools: {
+      browseRetailFolder: () => Promise<DawnToolsBrowseRetailResponse>
+      listAccountDirs: (retailPath: string) => Promise<DawnToolsAccountDirsResponse>
       loadGoldlog: (dawnToolsLuaPath: string) => Promise<DawnToolsLoadGoldlogResponse>
       uploadGoldlogToSheet: (payload: {
         dawnToolsLuaPath: string

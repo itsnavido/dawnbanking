@@ -13,6 +13,7 @@ import {
 } from './accountsStorage'
 import type {
   AppPage,
+  DawnToolsAccountDirsResponse,
   DawnToolsLoadGoldlogResponse,
   DawnToolsSyncResponse,
   GoldlogColumnKey,
@@ -36,6 +37,20 @@ function luaBaseName(p: string): string {
   const t = p.trim()
   if (!t) return ''
   return t.split(/[/\\]/).at(-1) ?? ''
+}
+
+function normalizePathParts(p: string): string[] {
+  return p.trim().split(/[\\/]+/).filter(Boolean)
+}
+
+function joinWindowsPath(...parts: string[]): string {
+  return parts
+    .flatMap((part) => normalizePathParts(part))
+    .join('\\')
+}
+
+function buildLuaPathFromRetail(retailPath: string, accountDir: string): string {
+  return joinWindowsPath(retailPath, 'WTF', 'Account', accountDir, 'SavedVariables', 'DawnTools.lua')
 }
 
 async function loadGoldlogFromPath(p: string): Promise<DawnToolsLoadGoldlogResponse> {
@@ -107,12 +122,16 @@ type ConfirmDialogState = {
 export default function App() {
   const [page, setPage] = useState<AppPage>('load')
   const [path, setPath] = useState('')
+  const [retailPath, setRetailPath] = useState('')
+  const [availableAccountDirs, setAvailableAccountDirs] = useState<string[]>([])
+  const [selectedAccountDir, setSelectedAccountDir] = useState('')
   const [result, setResult] = useState<DawnToolsLoadGoldlogResponse | null>(null)
   const [rows, setRows] = useState<GoldlogRow[]>([])
   const [selectedChars, setSelectedChars] = useState<Set<string>>(new Set())
   const [visibleColumns, setVisibleColumns] = useState<Set<GoldlogColumnKey>>(new Set(defaultVisibleColumns))
   const [sort, setSort] = useState<SortState>(defaultSort)
   const [filters, setFilters] = useState<TableFilters>(defaultFilters)
+  const [hideZeroBankBalances, setHideZeroBankBalances] = useState(false)
   const [pagination, setPagination] = useState<PaginationState>(defaultPagination)
   const [expandedRealms, setExpandedRealms] = useState<Set<string>>(new Set())
   const [loadedLuaPath, setLoadedLuaPath] = useState('')
@@ -134,7 +153,6 @@ export default function App() {
   const [accountNickname, setAccountNickname] = useState('')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const confirmResolverRef = useRef<((value: boolean) => void) | null>(null)
 
   useEffect(() => {
@@ -256,10 +274,11 @@ export default function App() {
 
       if (filters.faction && row.faction !== filters.faction) return false
       if (filters.realm && row.realm !== filters.realm) return false
+      if (hideZeroBankBalances && Number(row.guildGold || 0) <= 0) return false
 
       return true
     })
-  }, [rows, selectedChars, filters])
+  }, [rows, selectedChars, filters, hideZeroBankBalances])
 
   const sortedRows = useMemo(() => {
     const cloned = [...filteredRows]
@@ -307,6 +326,7 @@ export default function App() {
     setSyncStatus('')
     setExpandedRealms(new Set())
     setFilters(defaultFilters)
+    setHideZeroBankBalances(false)
     setSort(defaultSort)
     setPagination(defaultPagination)
     saveActiveAccountId(nextActiveId)
@@ -343,6 +363,47 @@ export default function App() {
 
       const acc = accounts.find((a) => a.luaPath.trim() === p)
       applySuccessfulLoad(p, response.goldlog, acc?.id ?? null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadAccountDirsForRetail = async (retail: string): Promise<DawnToolsAccountDirsResponse> => {
+    const trimmed = retail.trim()
+    if (!trimmed) {
+      return { ok: false, error: 'Retail folder path is empty.' }
+    }
+    const response = await window.dawntools.listAccountDirs(trimmed)
+    if (!response.ok) {
+      setAvailableAccountDirs([])
+      setSelectedAccountDir('')
+      setPath('')
+      return response
+    }
+    setAvailableAccountDirs(response.accountDirs)
+    const preferred = response.accountDirs.includes(selectedAccountDir)
+      ? selectedAccountDir
+      : (response.accountDirs[0] ?? '')
+    setSelectedAccountDir(preferred)
+    setPath(preferred ? buildLuaPathFromRetail(trimmed, preferred) : '')
+    return response
+  }
+
+  const handleBrowseRetailFolder = async () => {
+    setLoading(true)
+    try {
+      const browse = await window.dawntools.browseRetailFolder()
+      if (!browse.ok) {
+        setResult({ ok: false, error: browse.error })
+        return
+      }
+      setRetailPath(browse.retailPath)
+      const listed = await loadAccountDirsForRetail(browse.retailPath)
+      if (!listed.ok) {
+        setResult({ ok: false, error: listed.error })
+        return
+      }
+      setResult(null)
     } finally {
       setLoading(false)
     }
@@ -652,13 +713,41 @@ export default function App() {
         <section className="card">
           <h2>📂 Load File</h2>
           <label className="label">
-            DawnTools.lua path
+            WoW retail folder
             <input
               className="input"
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              placeholder="E:\\World of Warcraft\\_retail_\\WTF\\Account\\...\\SavedVariables\\DawnTools.lua"
+              value={retailPath}
+              onChange={(e) => setRetailPath(e.target.value)}
+              placeholder="E:\\World of Warcraft\\_retail_"
             />
+          </label>
+
+          <label className="label">
+            WTF account folder
+            <select
+              className="input"
+              value={selectedAccountDir}
+              onChange={(e) => {
+                const next = e.target.value
+                setSelectedAccountDir(next)
+                setPath(next ? buildLuaPathFromRetail(retailPath, next) : '')
+              }}
+              disabled={availableAccountDirs.length === 0}
+            >
+              <option value="">
+                {availableAccountDirs.length === 0 ? 'No account folders found' : 'Select account folder'}
+              </option>
+              {availableAccountDirs.map((dir) => (
+                <option key={dir} value={dir}>
+                  {dir}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="label">
+            Auto-selected DawnTools.lua path
+            <input className="input" value={path} readOnly />
           </label>
 
           <label className="label">
@@ -672,19 +761,16 @@ export default function App() {
           </label>
 
           <div className="row gap-sm wrap">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".lua"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0] as any | undefined
-                const selectedPath = file?.path as string | undefined
-                if (selectedPath) setPath(selectedPath)
-              }}
-            />
-            <button className="btn btn-secondary" type="button" disabled={loading} onClick={() => fileInputRef.current?.click()}>
-              📁 Browse
+            <button className="btn btn-secondary" type="button" disabled={loading} onClick={() => void handleBrowseRetailFolder()}>
+              📁 Browse Retail
+            </button>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              disabled={loading || retailPath.trim().length === 0}
+              onClick={() => void loadAccountDirsForRetail(retailPath)}
+            >
+              🔎 Find WTF Accounts
             </button>
             <button className="btn" type="button" disabled={loading || path.trim().length === 0} onClick={handleLoad}>
               {loading ? '⏳ Loading...' : '✅ Load'}
@@ -971,6 +1057,7 @@ export default function App() {
               type="button"
               onClick={() => {
                 setFilters(defaultFilters)
+                setHideZeroBankBalances(false)
                 setSort(defaultSort)
                 setPagination(defaultPagination)
               }}
@@ -1021,6 +1108,17 @@ export default function App() {
                 </option>
               ))}
             </select>
+            <label className="row gap-sm" style={{ alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={hideZeroBankBalances}
+                onChange={(e) => {
+                  setHideZeroBankBalances(e.target.checked)
+                  setPagination((p) => ({ ...p, page: 1 }))
+                }}
+              />
+              Hide 0 bank balances
+            </label>
           </div>
 
           <div className="row wrap gap-sm columns-row">

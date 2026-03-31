@@ -1,7 +1,9 @@
-import { ipcMain } from 'electron'
+import { dialog, ipcMain } from 'electron'
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
 import type {
+  DawnToolsAccountDirsResponse,
+  DawnToolsBrowseRetailResponse,
   DawnToolsSheetCheckResponse,
   DawnToolsLoadGoldlogResponse,
   DawnToolsSyncResponse,
@@ -25,6 +27,65 @@ function validateSettings(settings: GoogleSheetSettings): string | null {
 }
 
 export function registerIpcHandlers() {
+  ipcMain.handle('dawntools:browseRetailFolder', async () => {
+    try {
+      const defaultPath = 'E:\\World of Warcraft\\_retail_'
+      const result = await dialog.showOpenDialog({
+        title: 'Select World of Warcraft _retail_ folder',
+        properties: ['openDirectory'],
+        defaultPath,
+      })
+      if (result.canceled || result.filePaths.length === 0) {
+        return { ok: false, error: 'Folder selection was cancelled.' } satisfies DawnToolsBrowseRetailResponse
+      }
+      const retailPath = result.filePaths[0]?.trim() ?? ''
+      if (!retailPath) {
+        return { ok: false, error: 'No folder selected.' } satisfies DawnToolsBrowseRetailResponse
+      }
+      return { ok: true, retailPath } satisfies DawnToolsBrowseRetailResponse
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return { ok: false, error: message } satisfies DawnToolsBrowseRetailResponse
+    }
+  })
+
+  ipcMain.handle('dawntools:listAccountDirs', async (_event, retailPath: string) => {
+    try {
+      const retail = typeof retailPath === 'string' ? retailPath.trim() : ''
+      if (!retail) {
+        return { ok: false, error: 'Retail folder path is required.' } satisfies DawnToolsAccountDirsResponse
+      }
+
+      const accountRoot = path.join(retail, 'WTF', 'Account')
+      let stat
+      try {
+        stat = await fs.stat(accountRoot)
+      } catch {
+        return {
+          ok: false,
+          error: `Missing folder: ${accountRoot}`,
+        } satisfies DawnToolsAccountDirsResponse
+      }
+      if (!stat.isDirectory()) {
+        return {
+          ok: false,
+          error: `Not a directory: ${accountRoot}`,
+        } satisfies DawnToolsAccountDirsResponse
+      }
+
+      const entries = await fs.readdir(accountRoot, { withFileTypes: true })
+      const accountDirs = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+      return { ok: true, accountRoot, accountDirs } satisfies DawnToolsAccountDirsResponse
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return { ok: false, error: message } satisfies DawnToolsAccountDirsResponse
+    }
+  })
+
   ipcMain.handle('dawntools:loadGoldlog', async (_event, dawnToolsLuaPath: string) => {
     try {
       if (typeof dawnToolsLuaPath !== 'string') {
